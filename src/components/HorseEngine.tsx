@@ -9,6 +9,31 @@ import { cn } from '@/lib/utils';
 // Shared mouse coordinate state in 3D world space
 const globalMouse3D = new THREE.Vector3(999, 999, 999);
 
+function resolveModelPath(): string {
+  if (typeof document === 'undefined') {
+    return '/Horse.glb';
+  }
+
+  const nextScript = document.querySelector('script[src*="/_next/static/"]');
+  if (!nextScript) {
+    return '/Horse.glb';
+  }
+
+  const rawSrc = nextScript.getAttribute('src');
+  if (!rawSrc) {
+    return '/Horse.glb';
+  }
+
+  const marker = '/_next/';
+  const markerIndex = rawSrc.indexOf(marker);
+  if (markerIndex <= 0) {
+    return '/Horse.glb';
+  }
+
+  const detectedBasePath = rawSrc.slice(0, markerIndex);
+  return `${detectedBasePath}/Horse.glb`;
+}
+
 type HorseParticleParams = {
   travelDistance: number;
   turbulence: number;
@@ -343,9 +368,17 @@ function ParticleCloud({
   );
 }
 
-function HorseScene({ scrollYProgress, params }: { scrollYProgress: number, params: HorseParticleParams }) {
+function HorseScene({
+  scrollYProgress,
+  params,
+  modelPath,
+}: {
+  scrollYProgress: number;
+  params: HorseParticleParams;
+  modelPath: string;
+}) {
   const group = useRef<THREE.Group>(null);
-  const { nodes, animations } = useGLTF('/Horse.glb');
+  const { nodes, animations } = useGLTF(modelPath);
   
   const horseMeshArray = Object.values(nodes).filter((n) => (n as THREE.Mesh).isMesh);
   const horseMesh = horseMeshArray[0] as THREE.Mesh;
@@ -402,10 +435,9 @@ function MouseTracker() {
   );
 }
 
-useGLTF.preload('/Horse.glb');
-
 export default function HorseEngine({ className }: { className?: string }) {
   const scrollYProgress = 0; 
+  const modelPath = useMemo(() => resolveModelPath(), []);
 
   // Hardcoded to user's perfect visual configuration
   const params = {
@@ -421,7 +453,7 @@ export default function HorseEngine({ className }: { className?: string }) {
     <div className={cn("w-full h-full bg-transparent relative cursor-grab active:cursor-grabbing", className)}>
       <Canvas camera={{ position: [0, 10, 80], fov: 45 }}>
         <ambientLight intensity={0.8} />
-        <HorseScene scrollYProgress={scrollYProgress} params={params} />
+        <HorseScene scrollYProgress={scrollYProgress} params={params} modelPath={modelPath} />
         <MouseTracker />
         <OrbitControls enableZoom={false} enablePan={true} enableRotate={true} makeDefault />
       </Canvas>
