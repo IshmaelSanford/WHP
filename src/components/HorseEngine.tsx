@@ -1,13 +1,41 @@
 'use client';
 
-import React, { useRef, useEffect, useMemo, useState } from 'react';
-import { Canvas, useFrame, useThree } from '@react-three/fiber';
+import React, { useRef, useEffect, useMemo } from 'react';
+import { Canvas, useFrame } from '@react-three/fiber';
 import { useGLTF, useAnimations, OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import { cn } from '@/lib/utils';
 
 // Shared mouse coordinate state in 3D world space
 const globalMouse3D = new THREE.Vector3(999, 999, 999);
+
+type HorseParticleParams = {
+  travelDistance: number;
+  turbulence: number;
+  backMaskStart: number;
+  particleSize: number;
+  bodyLayers: number;
+  trailLayers: number;
+};
+
+type ParticleUniforms = {
+  uTime: { value: number };
+  uMouse: { value: THREE.Vector3 };
+  uSeed: { value: number };
+  uTravelDistance: { value: number };
+  uTurbulence: { value: number };
+  uBackMaskStart: { value: number };
+  uParticleSize: { value: number };
+};
+
+type ParticleShader = {
+  uniforms: ParticleUniforms;
+};
+
+function seededRandom(seedValue: number): number {
+  const x = Math.sin(seedValue) * 10000;
+  return x - Math.floor(x);
+}
 
 const noiseShader = `
 // Simplex 3D Noise 
@@ -77,9 +105,21 @@ float snoise(vec3 v){
 }
 `;
 
-function ParticleCloud({ horseMesh, originalGroup, parentGroup, seed, isEmitter = true, params }: { horseMesh: THREE.Mesh, originalGroup: React.RefObject<THREE.Group | null>, parentGroup: React.RefObject<THREE.Group | null>, seed: number, isEmitter?: boolean, params: any }) {
+function ParticleCloud({
+  horseMesh,
+  parentGroup,
+  seed,
+  isEmitter = true,
+  params,
+}: {
+  horseMesh: THREE.Mesh;
+  parentGroup: React.RefObject<THREE.Group | null>;
+  seed: number;
+  isEmitter?: boolean;
+  params: HorseParticleParams;
+}) {
   const pointsRef = useRef<THREE.Points>(null);
-  const shaderRef = useRef<any>(null);
+  const shaderRef = useRef<ParticleShader | null>(null);
   
   const geometry = useMemo(() => {
     // Clone original geometry
@@ -101,20 +141,21 @@ function ParticleCloud({ horseMesh, originalGroup, parentGroup, seed, isEmitter 
     
     const indices = geo.getIndex()?.array;
 
-    for(let i=0; i<count; i++) {
-      lifeOffsets[i] = Math.random();
+    for (let i = 0; i < count; i++) {
+      const randomBase = seed * 10000 + i * 17;
+      lifeOffsets[i] = seededRandom(randomBase + 1);
       
       // If the mesh is indexed, pick a random triangle to spawn a particle on
       if (indices && indices.length > 0) {
         // Pick a random face (triangle = 3 indices)
-        const faceIdx = Math.floor(Math.random() * (indices.length / 3)) * 3;
+        const faceIdx = Math.floor(seededRandom(randomBase + 2) * (indices.length / 3)) * 3;
         const i0 = indices[faceIdx];
         const i1 = indices[faceIdx + 1];
         const i2 = indices[faceIdx + 2];
         
         // Random barycentric coordinates for uniform face sampling
-        let u = Math.random();
-        let v = Math.random();
+        let u = seededRandom(randomBase + 3);
+        let v = seededRandom(randomBase + 4);
         if (u + v > 1) {
           u = 1 - u;
           v = 1 - v;
@@ -127,7 +168,7 @@ function ParticleCloud({ horseMesh, originalGroup, parentGroup, seed, isEmitter 
         positions[i*3+2] = originalPos[i0*3+2]*u + originalPos[i1*3+2]*v + originalPos[i2*3+2]*w;
 
         // Interpolate all morph targets perfectly so animation doesn't tear!
-        for(let m=0; m<morphs.length; m++) {
+        for (let m = 0; m < morphs.length; m++) {
           morphs[m].array[i*3] = originalMorphs[m][i0*3]*u + originalMorphs[m][i1*3]*v + originalMorphs[m][i2*3]*w;
           morphs[m].array[i*3+1] = originalMorphs[m][i0*3+1]*u + originalMorphs[m][i1*3+1]*v + originalMorphs[m][i2*3+1]*w;
           morphs[m].array[i*3+2] = originalMorphs[m][i0*3+2]*u + originalMorphs[m][i1*3+2]*v + originalMorphs[m][i2*3+2]*w;
@@ -136,35 +177,30 @@ function ParticleCloud({ horseMesh, originalGroup, parentGroup, seed, isEmitter 
 
       // Add microscopic noise to create 3D volumetric fuzz instead of flat faces
       const spread = isEmitter ? 0.3 : 0.05;
-      positions[i*3] += (Math.random() - 0.5) * spread;
-      positions[i*3+1] += (Math.random() - 0.5) * spread;
-      positions[i*3+2] += (Math.random() - 0.5) * spread;
+      positions[i*3] += (seededRandom(randomBase + 5) - 0.5) * spread;
+      positions[i*3+1] += (seededRandom(randomBase + 6) - 0.5) * spread;
+      positions[i*3+2] += (seededRandom(randomBase + 7) - 0.5) * spread;
     }
     
     geo.setAttribute('aLifeOffset', new THREE.BufferAttribute(lifeOffsets, 1));
     // Inform ThreeJS that attributes updated
     geo.attributes.position.needsUpdate = true;
-    for(let m=0; m<morphs.length; m++) {
+    for (let m = 0; m < morphs.length; m++) {
       morphs[m].needsUpdate = true;
     }
     
     return geo;
   }, [horseMesh, isEmitter, seed]);
 
-  const paramsRef = useRef(params);
-  useEffect(() => {
-    paramsRef.current = params;
-  }, [params]);
-
-  const customUniforms = useMemo(() => ({
+  const customUniforms = useMemo<ParticleUniforms>(() => ({
     uTime: { value: 0 },
     uMouse: { value: new THREE.Vector3(0,0,0) },
     uSeed: { value: seed },
-    uTravelDistance: { value: paramsRef.current.travelDistance },
-    uTurbulence: { value: paramsRef.current.turbulence },
-    uBackMaskStart: { value: paramsRef.current.backMaskStart },
-    uParticleSize: { value: paramsRef.current.particleSize }
-  }), [seed]);
+    uTravelDistance: { value: params.travelDistance },
+    uTurbulence: { value: params.turbulence },
+    uBackMaskStart: { value: params.backMaskStart },
+    uParticleSize: { value: params.particleSize }
+  }), [params, seed]);
 
   useFrame((state) => {
     if (pointsRef.current && horseMesh.morphTargetInfluences) {
@@ -187,10 +223,10 @@ function ParticleCloud({ horseMesh, originalGroup, parentGroup, seed, isEmitter 
         shaderRef.current.uniforms.uMouse.value.copy(globalMouse3D);
       }
 
-      shaderRef.current.uniforms.uTravelDistance.value = paramsRef.current.travelDistance;
-      shaderRef.current.uniforms.uTurbulence.value = paramsRef.current.turbulence;
-      shaderRef.current.uniforms.uBackMaskStart.value = paramsRef.current.backMaskStart;
-      shaderRef.current.uniforms.uParticleSize.value = paramsRef.current.particleSize;
+      shaderRef.current.uniforms.uTravelDistance.value = params.travelDistance;
+      shaderRef.current.uniforms.uTurbulence.value = params.turbulence;
+      shaderRef.current.uniforms.uBackMaskStart.value = params.backMaskStart;
+      shaderRef.current.uniforms.uParticleSize.value = params.particleSize;
     }
   });
 
@@ -211,7 +247,7 @@ function ParticleCloud({ horseMesh, originalGroup, parentGroup, seed, isEmitter 
         depthWrite={false}
         onBeforeCompile={(shader) => {
           Object.assign(shader.uniforms, customUniforms);
-          shaderRef.current = shader;
+          shaderRef.current = { uniforms: shader.uniforms as ParticleUniforms };
 
           shader.vertexShader = shader.vertexShader.replace(
             `#include <common>`,
@@ -307,7 +343,7 @@ function ParticleCloud({ horseMesh, originalGroup, parentGroup, seed, isEmitter 
   );
 }
 
-function HorseScene({ scrollYProgress, params }: { scrollYProgress: number, params: any }) {
+function HorseScene({ scrollYProgress, params }: { scrollYProgress: number, params: HorseParticleParams }) {
   const group = useRef<THREE.Group>(null);
   const { nodes, animations } = useGLTF('/Horse.glb');
   
@@ -340,12 +376,12 @@ function HorseScene({ scrollYProgress, params }: { scrollYProgress: number, para
         
         {/* SOLID OUTLINE (Clear silhouette) */}
         {Array.from({ length: params.bodyLayers || 0 }).map((_, i) => (
-          <ParticleCloud key={`body-${i}`} horseMesh={horseMesh} originalGroup={originalGroup} parentGroup={group} seed={i * 0.1 + 0.1} isEmitter={false} params={params} />
+          <ParticleCloud key={`body-${i}`} horseMesh={horseMesh} parentGroup={group} seed={i * 0.1 + 0.1} isEmitter={false} params={params} />
         ))}
         
         {/* MODERATE PARTICLE TRAIL (Emitted exclusively from the back half) */}
         {Array.from({ length: params.trailLayers || 0 }).map((_, i) => (
-          <ParticleCloud key={`trail-${i}`} horseMesh={horseMesh} originalGroup={originalGroup} parentGroup={group} seed={i * 1.1 + 1.1} params={params} />
+          <ParticleCloud key={`trail-${i}`} horseMesh={horseMesh} parentGroup={group} seed={i * 1.1 + 1.1} params={params} />
         ))}
       </group>
     </>
@@ -354,7 +390,6 @@ function HorseScene({ scrollYProgress, params }: { scrollYProgress: number, para
 
 // Global mouse tracker uses a massive sphere to properly register mouse regardless of camera angle
 function MouseTracker() {
-  const { camera } = useThree();
   return (
     <mesh 
       visible={false} 

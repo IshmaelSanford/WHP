@@ -1,8 +1,9 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname } from 'next/navigation';
-import { LayoutDashboard, Users, Activity, Settings, Bell, Search, Hexagon, LogOut } from 'lucide-react';
+import { LayoutDashboard, Users, Activity, Settings, Bell, Search, LogOut } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -82,7 +83,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 <p className="text-xs text-zinc-500">Conservation Dept</p>
               </div>
               <div className="w-10 h-10 rounded-full bg-zinc-100 border border-zinc-200 flex items-center justify-center">
-                 <img src="https://api.dicebear.com/7.x/notionists/svg?seed=Felix&backgroundColor=f5f5f5" alt="Avatar" className="w-full h-full rounded-full" />
+                <Image
+                  src="https://api.dicebear.com/7.x/notionists/svg?seed=Felix&backgroundColor=f5f5f5"
+                  alt="Avatar"
+                  width={40}
+                  height={40}
+                  className="w-full h-full rounded-full"
+                  unoptimized
+                />
               </div>
             </div>
           </div>

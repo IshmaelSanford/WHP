@@ -3,7 +3,7 @@
 import dynamic from 'next/dynamic';
 import { Navbar } from '@/components/Navbar';
 import { ArrowRight, Leaf, Shield, Globe, ChevronRight } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { motion, type Variants } from 'framer-motion';
 
 // Dynamically import the 3D engine to prevent SSR issues with Canvas
 const HorseEngine = dynamic(() => import('@/components/HorseEngine'), { 
@@ -11,7 +11,7 @@ const HorseEngine = dynamic(() => import('@/components/HorseEngine'), {
   loading: () => <div className="w-full h-full animate-pulse bg-zinc-100 rounded-lg"></div>
 });
 
-const fadeUp = {
+const fadeUp: Variants = {
   hidden: { opacity: 0, y: 40 },
   visible: { opacity: 1, y: 0, transition: { duration: 0.8, ease: "easeOut" } }
 };
